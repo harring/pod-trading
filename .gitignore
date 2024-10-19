@@ -23,8 +23,7 @@ logs
 .node_repl_history
 
 # Card files
-server/scryfall/
-server/textfiles/
+server/textfiles/*
 
 # Environment variables
 .env*
