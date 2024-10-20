@@ -45,7 +45,7 @@ Clone the repository:
     git clone https://github.com/harring/pod-trading.git
     cd pod-trading
 
-Edit the example .env file in server to set the password
+Edit the example .env file in server to set the password, if you set no password it will default to "harring".
 
 To deploy the application using Docker:
 
