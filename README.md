@@ -2,6 +2,8 @@
 
 Pod-Trading is a simple web application designed to facilitate the trading of Magic: The Gathering (MTG) cards among a group (pod) of players. It allows players to upload their collection in CSV format, search for cards, applications such as ManaBox allows user to scan and create collections but there is no easy way to browse pod members collections.
 
+The application is developed to work primarily with the files exported by https://manabox.app/ , others might work but are not officially supported.
+
 <img src="./client/src/assets/logo.png" alt="Pod-Trading Logo" width="200" height="200">
 
 ### Features
