@@ -9,12 +9,16 @@ The application is developed to work primarily with the files exported by https:
 ### Features
 
 - Upload Collections: Players can upload their card collection in CSV format, making it easy to manage and trade cards.
-- Search Functionality: Search for cards by name, the results shows set, foil status, rarity, and language within uploaded collections. Searching by set or other feature can easily be implemented.
+- Search Functionality: Search for cards by name, the results shows set, foil status, rarity, price, and language within uploaded collections. Searching by set or other feature can easily be implemented.
 - Collection Management: Filter collections by collection name to view the contents of each player’s collection.
 - Card Link Integration: Each card name is clickable and links to its Scryfall page for detailed information.
 - Password-Protected Actions: Secure uploads and deletions of collections with a common password.
 - Delete Collections: Players can delete uploaded collections with proper authentication.
 - Responsive Design: User-friendly interface for managing collections and trades.
+- Downloads daily bulk information from Scryfall to show 7 day average euro price from cardmarket
+
+<img src="./client/src/assets/example.png" alt="Pod-Trading Example" >
+
 
 ### Tech Stack
 
@@ -52,6 +56,7 @@ To deploy the application using Docker:
 
     docker build -t pod-trading .
     docker run -p 3000:3000 pod-trading
+Mounting scryfall and textfile directories will allow for persistent storage.
 
 The application will be accessible at http://localhost:3000.
 
