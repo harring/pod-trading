@@ -3,9 +3,15 @@ const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
 const bodyParser = require('body-parser');
+const dotenv = require('dotenv');
+
+dotenv.config()
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Set the password to whats in the .env file, fallback to "harring" if no password
+const PASSWORD = process.env.SECRET || 'harring'
 
 // Ensure the 'textfiles' directory exists
 const textFilesDirectory = path.join(__dirname, 'textfiles');
@@ -25,11 +31,35 @@ const storage = multer.diskStorage({
   },
   filename: function (req, file, cb) {
     // Set the filename to the user's provided name with .csv extension
-    cb(null, `${req.body.username || 'temp'}.csv`);  
+    cb(null, `${req.body.username || 'temp'}.csv`);
   }
 });
 
 const upload = multer({ storage: storage });
+
+// Middleware to check password
+function verifyPassword(req, res, next) {
+  const password = req.body.password || req.headers['password']; // FormData uses body for multipart requests
+
+  if (!password || password !== PASSWORD) {
+    return res.status(403).send('Incorrect password');
+  }
+
+  next(); // Proceed to the next middleware if password is correct
+}
+
+// Delete CSV file
+app.delete('/delete/:filename', verifyPassword, (req, res) => {
+  const filename = req.params.filename;
+  const filePath = path.join(__dirname, 'textfiles', filename);
+
+  fs.unlink(filePath, (err) => {
+    if (err) {
+      return res.status(500).json({ message: `Error deleting file ${filename}: ${err.message}` });
+    }
+    res.status(200).json({ message: 'File deleted successfully.' });
+  });
+});
 
 // Serve the existing CSV files
 app.get('/files', (req, res) => {
@@ -40,7 +70,7 @@ app.get('/files', (req, res) => {
 
     let dataRows = [];
     let fileCount = files.length;
-    
+
     // If there are no files, send an empty response immediately
     if (fileCount === 0) {
       return res.json(dataRows);
@@ -70,20 +100,25 @@ app.get('/files', (req, res) => {
   });
 });
 
-// Handle file uploads using upload.single() to capture file and form data
 app.post('/upload', (req, res, next) => {
   // First process the file upload with multer
   upload.single('file')(req, res, function (err) {
     if (err) {
-      return res.status(400).send('File upload failed.');
+      return res.status(400).json({ message: 'File upload failed.' });
     }
 
     if (!req.file) {
-      return res.status(400).send('No file uploaded.');
+      return res.status(400).json({ message: 'No file uploaded.' });
     }
 
     if (!req.body.username) {
-      return res.status(400).send('No username provided.');
+      return res.status(400).json({ message: 'No username provided.' });
+    }
+
+    // Verify password after multer processes form data
+    const password = req.body.password || req.headers['password'];
+    if (!password || password !== PASSWORD) {
+      return res.status(403).send('Incorrect password');
     }
 
     // Rename the file after upload using the username
@@ -93,7 +128,7 @@ app.post('/upload', (req, res, next) => {
 
     fs.rename(oldFilePath, newFilePath, (renameErr) => {
       if (renameErr) {
-        return res.status(500).send('Error renaming the file.');
+        return res.status(500).json({ message: 'Error renaming the file.' });
       }
 
       res.json({ message: 'File uploaded successfully!', filename: newFileName });

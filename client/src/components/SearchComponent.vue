@@ -1,10 +1,25 @@
 <template>
   <div>
-    <!-- Search Input -->
-    <input v-model="searchQuery" placeholder="Search for a name..." />
+    <!-- Logo and Website Name -->
+    <div class="header">
+      <img src="@/assets/logo.png" alt="Pod-Trading Logo" class="logo" />
+      <h1 class="site-name">Pod-Trading</h1>
+    </div>
 
-    <!-- Upload button in top-right -->
-    <button @click="showModal = true" class="upload-button">Upload CSV</button>
+    <!-- Search Input and Filename Dropdown -->
+    <div style="display: flex; align-items: center;">
+      <input v-model="searchQuery" placeholder="Search for a name..." />
+
+      <!-- Dropdown for filtering by filename -->
+      <select v-model="selectedFilename" @change="filterByFilename">
+        <option value="">All Collections</option>
+        <option v-for="file in uniqueFilenames" :key="file" :value="file">{{ file }}</option>
+      </select>
+
+      <!-- Upload and Delete buttons -->
+      <button @click="showModal = true" class="upload-button">Upload Collection</button>
+      <button @click="showDeleteModal = true" class="delete-button" :disabled="!selectedFilename">Delete Selected</button>
+    </div>
 
     <!-- Table of Data -->
     <table>
@@ -15,7 +30,7 @@
           <th>Foil</th>
           <th>Rarity</th>
           <th>Language</th>
-          <th>Filename</th>
+          <th>Collection</th>
         </tr>
       </thead>
       <tbody>
@@ -47,13 +62,35 @@
           <input type="file" @change="onFileChange" accept=".csv" required />
           <br /><br />
 
+          <label for="password">Enter password:</label>
+          <input type="password" v-model="password" required />
+          <br /><br />
+
           <button type="submit">Upload</button>
           <button type="button" @click="showModal = false">Cancel</button>
         </form>
       </div>
     </div>
+
+    <!-- Modal Popup for File Delete -->
+    <div v-if="showDeleteModal" class="modal">
+      <div class="modal-content">
+        <h3>Delete Selected CSV File</h3>
+        <form @submit.prevent="deleteCSV">
+          <p>Are you sure you want to delete <strong>{{ selectedFilename }}</strong>?</p>
+
+          <label for="password">Enter password:</label>
+          <input type="password" v-model="password" required />
+          <br /><br />
+
+          <button type="submit">Delete</button>
+          <button type="button" @click="showDeleteModal = false">Cancel</button>
+        </form>
+      </div>
+    </div>
   </div>
 </template>
+
 
 <script>
 export default {
@@ -63,17 +100,37 @@ export default {
       names: [],
       file: null, // File to upload
       username: '', // User input for file name
-      showModal: false, // Controls the modal visibility
+      password: '', // Password input for file operations
+      showModal: false, // Controls the modal visibility for upload
+      showDeleteModal: false, // Controls the modal visibility for delete
+      selectedFilename: '', // Selected filename for filtering
     };
   },
   computed: {
     filteredNames() {
-      if (!this.searchQuery) return this.names;
-      const query = this.searchQuery.toLowerCase();
-      return this.names.filter(row => {
-        return row['Name'] && typeof row['Name'] === 'string' && row['Name'].toLowerCase().includes(query);
-      });
+      let filtered = this.names;
+
+      // Apply search filter
+      if (this.searchQuery) {
+        const query = this.searchQuery.toLowerCase();
+        filtered = filtered.filter(row =>
+          row['Name'] && row['Name'].toLowerCase().includes(query)
+        );
+      }
+
+      // Apply filename filter
+      if (this.selectedFilename) {
+        filtered = filtered.filter(row => row.filename === this.selectedFilename + '.csv');
+      }
+
+      return filtered;
     },
+
+    // Get unique filenames for dropdown options
+    uniqueFilenames() {
+      const filenames = this.names.map(row => row.filename.replace('.csv', ''));
+      return [...new Set(filenames)];
+    }
   },
   methods: {
     fetchNames() {
@@ -90,29 +147,68 @@ export default {
       this.file = event.target.files[0];
     },
     uploadFile() {
-      if (!this.file || !this.username) {
-        alert('Please fill in all fields.');
-        return;
+  if (!this.file || !this.username || !this.password) {
+    alert('Please fill in all fields.');
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append('file', this.file);
+  formData.append('username', this.username);
+  formData.append('password', this.password); // Include password
+
+  fetch('/upload', {
+    method: 'POST',
+    body: formData,
+  })
+    .then(response => response.json()) // Parse the JSON response
+    .then(data => {
+      if (data.message) {
+        alert(data.message); // Display the message from the backend
+        this.fetchNames(); // Refresh the table after upload
+        this.showModal = false; // Close the modal after upload
+      } else {
+        alert('File upload failed.'); // Fallback if no message is received
       }
+    })
+    .catch(error => {
+      console.error('Error uploading file:', error);
+      alert('File upload failed.');
+    });
+},
+deleteCSV() {
+  if (!this.password) {
+    alert('Please enter the password.');
+    return;
+  }
 
-      const formData = new FormData();
-      formData.append('file', this.file);
-      formData.append('username', this.username);
-
-      fetch('/upload', {
-        method: 'POST',
-        body: formData,
-      })
-        .then(() => {
-          alert('File uploaded successfully!');
-          this.fetchNames(); // Refresh the table after upload
-          this.showModal = false; // Close the modal after upload
-        })
-        .catch(error => {
-          console.error('Error uploading file:', error);
-          alert('File upload failed.');
-        });
+  const filename = `${this.selectedFilename}.csv`;
+  fetch(`/delete/${filename}`, {
+    method: 'DELETE',
+    headers: {
+      'Content-Type': 'application/json',
     },
+    body: JSON.stringify({ password: this.password }) // Include password
+  })
+    .then(response => response.json()) // Parse the JSON response
+    .then(data => {
+      if (data.message) {
+        alert(data.message); // Display the message from the backend
+        this.fetchNames(); // Refresh the table after deletion
+        this.selectedFilename = ''; // Reset the selected file
+        this.showDeleteModal = false; // Close the modal after deletion
+      } else {
+        alert('Failed to delete file.');
+      }
+    })
+    .catch(error => {
+      console.error('Error deleting file:', error);
+      alert('File deletion failed.');
+    });
+},
+    filterByFilename() {
+      // This method is automatically handled by the computed property `filteredNames`
+    }
   },
   mounted() {
     this.fetchNames();
@@ -122,6 +218,23 @@ export default {
 
 <style scoped>
 /* Add some basic styling */
+.header {
+  display: flex;
+  align-items: center;
+  padding: 10px;
+}
+
+.logo {
+  width: 50px;
+  height: 50px;
+  margin-right: 10px;
+}
+
+.site-name {
+  font-size: 24px;
+  font-weight: bold;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
@@ -153,9 +266,7 @@ a:hover {
 
 /* Upload Button */
 .upload-button {
-  position: absolute;
-  top: 10px;
-  right: 10px;
+  margin-left: 10px;
   padding: 10px 20px;
   background-color: #3498db;
   color: white;
@@ -165,6 +276,20 @@ a:hover {
 
 .upload-button:hover {
   background-color: #2980b9;
+}
+
+/* Delete Button */
+.delete-button {
+  margin-left: 10px;
+  padding: 10px 20px;
+  background-color: #e74c3c;
+  color: white;
+  border: none;
+  cursor: pointer;
+}
+
+.delete-button:hover {
+  background-color: #c0392b;
 }
 
 /* Modal Styling */
@@ -195,4 +320,5 @@ a:hover {
 .modal-content button {
   margin-top: 10px;
 }
+
 </style>
