@@ -27,10 +27,10 @@
         <tr>
           <th>Name</th>
           <th>Set Name</th>
-          <th>Foil</th>
           <th>Rarity</th>
           <th>Language</th>
           <th>Collection</th>
+          <th>CM 7 day avg</th>
         </tr>
       </thead>
       <tbody>
@@ -41,10 +41,11 @@
             </a>
           </td>
           <td>{{ row['Set name'] }}</td>
-          <td>{{ row['Foil'] }}</td>
-          <td>{{ row['Rarity'] }}</td>
+          <!-- Updated Rarity column to append " foil" if the card is foil -->
+          <td>{{ row['Rarity'] }}{{ row['Foil'] === 'foil' ? ' foil' : '' }}</td>
           <td>{{ row['Language'] }}</td>
           <td>{{ row.filename.replace('.csv', '') }}</td>
+          <td>{{ row['Purchase price'] ? row['Purchase price'] + ' €' : 'N/A' }}</td>
         </tr>
       </tbody>
     </table>
@@ -90,7 +91,6 @@
     </div>
   </div>
 </template>
-
 
 <script>
 export default {
@@ -146,34 +146,60 @@ export default {
     onFileChange(event) {
       this.file = event.target.files[0];
     },
-    uploadFile() {
+uploadFile() {
   if (!this.file || !this.username || !this.password) {
     alert('Please fill in all fields.');
     return;
   }
 
   const formData = new FormData();
-  formData.append('file', this.file);
-  formData.append('username', this.username);
-  formData.append('password', this.password); // Include password
+  formData.append('username', this.username); // Username
+  formData.append('password', this.password); // Password
+  formData.append('file', this.file); // CSV file
+
+
+  console.log('Uploading file with formData:', {
+    username: this.username,
+    password: this.password,
+    file: this.file.name,
+  }); // Log to ensure password is included
 
   fetch('/upload', {
     method: 'POST',
-    body: formData,
+    body: formData, // Sends the formData with password
   })
-    .then(response => response.json()) // Parse the JSON response
+    .then(response => {
+      const contentType = response.headers.get('content-type');
+      if (!response.ok) {
+        if (contentType && contentType.indexOf('application/json') !== -1) {
+          return response.json().then(err => {
+            throw new Error(err.message || 'Unknown server error');
+          });
+        } else {
+          return response.text().then(err => {
+            throw new Error(err || 'Unknown server error');
+          });
+        }
+      }
+      if (contentType && contentType.indexOf('application/json') !== -1) {
+        return response.json();
+      }
+      return response.text().then(text => {
+        throw new Error(`Unexpected non-JSON response: ${text}`);
+      });
+    })
     .then(data => {
       if (data.message) {
-        alert(data.message); // Display the message from the backend
-        this.fetchNames(); // Refresh the table after upload
-        this.showModal = false; // Close the modal after upload
+        alert(data.message);
+        this.fetchNames();
+        this.showModal = false;
       } else {
-        alert('File upload failed.'); // Fallback if no message is received
+        alert('File upload failed.');
       }
     })
     .catch(error => {
       console.error('Error uploading file:', error);
-      alert('File upload failed.');
+      alert(`File upload failed: ${error.message}`);
     });
 },
 deleteCSV() {
