@@ -1,15 +1,18 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
-const cors = require('cors');
 const multer = require('multer');
 const bodyParser = require('body-parser');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Enable CORS for all routes
-app.use(cors());
+// Ensure the 'textfiles' directory exists
+const textFilesDirectory = path.join(__dirname, 'textfiles');
+if (!fs.existsSync(textFilesDirectory)) {
+  fs.mkdirSync(textFilesDirectory);
+  console.log('Created textfiles directory');
+}
 
 // Parse URL-encoded bodies (for form data)
 app.use(express.urlencoded({ extended: true }));
@@ -21,9 +24,8 @@ const storage = multer.diskStorage({
     cb(null, 'textfiles/'); // Save the file to the 'textfiles' directory
   },
   filename: function (req, file, cb) {
-    // At this point, req.body.username may not be available. 
-    // So we will set the filename after the fields have been processed.
-    cb(null, 'temp.csv');  // Temporarily store with a temp name.
+    // Set the filename to the user's provided name with .csv extension
+    cb(null, `${req.body.username || 'temp'}.csv`);  
   }
 });
 
@@ -31,9 +33,7 @@ const upload = multer({ storage: storage });
 
 // Serve the existing CSV files
 app.get('/files', (req, res) => {
-  const directoryPath = path.join(__dirname, 'textfiles');
-
-  fs.readdir(directoryPath, (err, files) => {
+  fs.readdir(textFilesDirectory, (err, files) => {
     if (err) {
       return res.status(500).send('Unable to scan directory');
     }
@@ -47,7 +47,7 @@ app.get('/files', (req, res) => {
     }
 
     files.forEach((file) => {
-      const filePath = path.join(directoryPath, file);
+      const filePath = path.join(textFilesDirectory, file);
       const csv = require('csv-parser');
 
       fs.createReadStream(filePath)
@@ -88,8 +88,8 @@ app.post('/upload', (req, res, next) => {
 
     // Rename the file after upload using the username
     const newFileName = `${req.body.username}.csv`;
-    const oldFilePath = path.join(__dirname, 'textfiles', req.file.filename);
-    const newFilePath = path.join(__dirname, 'textfiles', newFileName);
+    const oldFilePath = path.join(textFilesDirectory, req.file.filename);
+    const newFilePath = path.join(textFilesDirectory, newFileName);
 
     fs.rename(oldFilePath, newFilePath, (renameErr) => {
       if (renameErr) {
@@ -101,6 +101,15 @@ app.post('/upload', (req, res, next) => {
   });
 });
 
+// Serve the static frontend files from the 'public' directory
+app.use(express.static(path.join(__dirname, 'public')));
+
+// Fallback route to serve the Vue.js app
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// Start the server
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });

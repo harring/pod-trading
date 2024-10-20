@@ -77,7 +77,7 @@ export default {
   },
   methods: {
     fetchNames() {
-      fetch('http://localhost:3000/files')
+      fetch('/files')
         .then(response => response.json())
         .then(data => {
           this.names = data;
@@ -99,7 +99,7 @@ export default {
       formData.append('file', this.file);
       formData.append('username', this.username);
 
-      fetch('http://localhost:3000/upload', {
+      fetch('/upload', {
         method: 'POST',
         body: formData,
       })
