@@ -1,28 +1,26 @@
 <template>
   <div>
-    <!-- Logo and Website Name -->
     <div class="header">
       <img src="@/assets/logo.png" alt="Pod-Trading Logo" class="logo" />
       <h1 class="site-name">Pod-Trading</h1>
     </div>
 
-    <!-- Search Input and Filename Dropdown -->
     <div style="display: flex; align-items: center;">
-      <input v-model="searchQuery" placeholder="Search for a name..." />
-
-      <!-- Dropdown for filtering by filename -->
-      <select v-model="selectedFilename" @change="filterByFilename">
+      <input v-model="searchQuery" placeholder="Search for a name..." @keyup.enter="searchItems" />
+      <select v-model="selectedFilename">
         <option value="">All Collections</option>
         <option v-for="file in uniqueFilenames" :key="file" :value="file">{{ file }}</option>
       </select>
-
-      <!-- Upload and Delete buttons -->
       <button @click="showModal = true" class="upload-button">Upload Collection</button>
       <button @click="showDeleteModal = true" class="delete-button" :disabled="!selectedFilename">Delete Selected</button>
     </div>
 
-    <!-- Table of Data -->
-    <table>
+    <!-- Loading Indicator -->
+    <div v-if="loading" class="loading-indicator">
+      <p>Loading, please wait...</p>
+    </div>
+
+    <table v-else>
       <thead>
         <tr>
           <th>Name</th>
@@ -34,14 +32,9 @@
         </tr>
       </thead>
       <tbody>
-        <tr v-for="(row, index) in filteredNames" :key="`${row.filename}-${index}`">
-          <td>
-            <a :href="`https://scryfall.com/cards/${row['Scryfall ID']}`" target="_blank">
-              {{ row['Name'] }}
-            </a>
-          </td>
+        <tr v-for="(row, index) in names" :key="`${row.filename}-${index}`">
+          <td><a :href="`https://scryfall.com/cards/${row['Scryfall ID']}`" target="_blank">{{ row['Name'] }}</a></td>
           <td>{{ row['Set name'] }}</td>
-          <!-- Updated Rarity column to append " foil" if the card is foil -->
           <td>{{ row['Rarity'] }}{{ row['Foil'] === 'foil' ? ' foil' : '' }}</td>
           <td>{{ row['Language'] }}</td>
           <td>{{ row.filename.replace('.csv', '') }}</td>
@@ -98,35 +91,16 @@ export default {
     return {
       searchQuery: '',
       names: [],
-      file: null, // File to upload
-      username: '', // User input for file name
-      password: '', // Password input for file operations
-      showModal: false, // Controls the modal visibility for upload
-      showDeleteModal: false, // Controls the modal visibility for delete
-      selectedFilename: '', // Selected filename for filtering
+      file: null,
+      username: '',
+      password: '',
+      showModal: false,
+      showDeleteModal: false,
+      selectedFilename: '',
+      loading: false,
     };
   },
   computed: {
-    filteredNames() {
-      let filtered = this.names;
-
-      // Apply search filter
-      if (this.searchQuery) {
-        const query = this.searchQuery.toLowerCase();
-        filtered = filtered.filter(row =>
-          row['Name'] && row['Name'].toLowerCase().includes(query)
-        );
-      }
-
-      // Apply filename filter
-      if (this.selectedFilename) {
-        filtered = filtered.filter(row => row.filename === this.selectedFilename + '.csv');
-      }
-
-      return filtered;
-    },
-
-    // Get unique filenames for dropdown options
     uniqueFilenames() {
       const filenames = this.names.map(row => row.filename.replace('.csv', ''));
       return [...new Set(filenames)];
@@ -136,104 +110,89 @@ export default {
     fetchNames() {
       fetch('/files')
         .then(response => response.json())
-        .then(data => {
-          this.names = data;
-        })
-        .catch(error => {
-          console.error('Error fetching data:', error);
-        });
+        .then(data => this.names = data)
+        .catch(error => console.error('Error fetching data:', error));
+    },
+    searchItems() {
+      if (!this.searchQuery) {
+        this.fetchNames();
+        return;
+      }
+
+      this.loading = true;
+      fetch('/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: this.searchQuery, filename: this.selectedFilename }),
+      })
+      .then(response => response.json())
+      .then(data => {
+        this.names = data;
+      })
+      .catch(error => {
+        console.error('Error searching:', error);
+        alert(`Search failed: ${error.message}`);
+      })
+      .finally(() => {
+        this.loading = false;
+      });
     },
     onFileChange(event) {
       this.file = event.target.files[0];
     },
-uploadFile() {
-  if (!this.file || !this.username || !this.password) {
-    alert('Please fill in all fields.');
-    return;
-  }
-
-  const formData = new FormData();
-  formData.append('username', this.username); // Username
-  formData.append('password', this.password); // Password
-  formData.append('file', this.file); // CSV file
-
-
-  console.log('Uploading file with formData:', {
-    username: this.username,
-    password: this.password,
-    file: this.file.name,
-  }); // Log to ensure password is included
-
-  fetch('/upload', {
-    method: 'POST',
-    body: formData, // Sends the formData with password
-  })
-    .then(response => {
-      const contentType = response.headers.get('content-type');
-      if (!response.ok) {
-        if (contentType && contentType.indexOf('application/json') !== -1) {
-          return response.json().then(err => {
-            throw new Error(err.message || 'Unknown server error');
-          });
-        } else {
-          return response.text().then(err => {
-            throw new Error(err || 'Unknown server error');
-          });
-        }
+    uploadFile() {
+      if (!this.file || !this.username || !this.password) {
+        alert('Please fill in all fields.');
+        return;
       }
-      if (contentType && contentType.indexOf('application/json') !== -1) {
-        return response.json();
-      }
-      return response.text().then(text => {
-        throw new Error(`Unexpected non-JSON response: ${text}`);
-      });
-    })
-    .then(data => {
-      if (data.message) {
+
+      this.loading = true;
+      const formData = new FormData();
+      formData.append('username', this.username);
+      formData.append('password', this.password);
+      formData.append('file', this.file);
+
+      fetch('/upload', {
+        method: 'POST',
+        body: formData,
+      })
+      .then(response => response.json())
+      .then(data => {
         alert(data.message);
         this.fetchNames();
         this.showModal = false;
-      } else {
-        alert('File upload failed.');
-      }
-    })
-    .catch(error => {
-      console.error('Error uploading file:', error);
-      alert(`File upload failed: ${error.message}`);
-    });
-},
-deleteCSV() {
-  if (!this.password) {
-    alert('Please enter the password.');
-    return;
-  }
-
-  const filename = `${this.selectedFilename}.csv`;
-  fetch(`/delete/${filename}`, {
-    method: 'DELETE',
-    headers: {
-      'Content-Type': 'application/json',
+      })
+      .catch(error => {
+        console.error('Error uploading file:', error);
+        alert(`File upload failed: ${error.message}`);
+      })
+      .finally(() => {
+        this.loading = false;
+      });
     },
-    body: JSON.stringify({ password: this.password }) // Include password
-  })
-    .then(response => response.json()) // Parse the JSON response
-    .then(data => {
-      if (data.message) {
-        alert(data.message); // Display the message from the backend
-        this.fetchNames(); // Refresh the table after deletion
-        this.selectedFilename = ''; // Reset the selected file
-        this.showDeleteModal = false; // Close the modal after deletion
-      } else {
-        alert('Failed to delete file.');
+    deleteCSV() {
+      if (!this.password) {
+        alert('Please enter the password.');
+        return;
       }
-    })
-    .catch(error => {
-      console.error('Error deleting file:', error);
-      alert('File deletion failed.');
-    });
-},
-    filterByFilename() {
-      // This method is automatically handled by the computed property `filteredNames`
+
+      const filename = `${this.selectedFilename}.csv`;
+      fetch(`/delete/${filename}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: this.password }),
+      })
+      .then(response => response.json())
+      .then(data => {
+        alert(data.message);
+        this.fetchNames();
+        this.selectedFilename = '';
+        this.showDeleteModal = false;
+      })
+      .catch(error => {
+        console.error('Error deleting file:', error);
+        alert('File deletion failed.');
+      });
     }
   },
   mounted() {
@@ -243,7 +202,12 @@ deleteCSV() {
 </script>
 
 <style scoped>
-/* Add some basic styling */
+.loading-indicator {
+  text-align: center;
+  font-size: 1.2em;
+  color: #3498db;
+}
+
 .header {
   display: flex;
   align-items: center;
@@ -290,7 +254,6 @@ a:hover {
   text-decoration: underline;
 }
 
-/* Upload Button */
 .upload-button {
   margin-left: 10px;
   padding: 10px 20px;
@@ -304,7 +267,6 @@ a:hover {
   background-color: #2980b9;
 }
 
-/* Delete Button */
 .delete-button {
   margin-left: 10px;
   padding: 10px 20px;
@@ -318,7 +280,6 @@ a:hover {
   background-color: #c0392b;
 }
 
-/* Modal Styling */
 .modal {
   position: fixed;
   top: 0;
@@ -346,5 +307,4 @@ a:hover {
 .modal-content button {
   margin-top: 10px;
 }
-
 </style>
