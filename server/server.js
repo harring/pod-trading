@@ -113,6 +113,54 @@ app.get('/files', (req, res) => {
   });
 });
 
+// Endpoint for multisearch
+app.post('/multisearch', (req, res) => {
+  const { terms, filename } = req.body;
+  const searchTerms = terms.map(term => term.toLowerCase());
+
+  const searchFileExact = (filePath, filename) => {
+    return new Promise((resolve, reject) => {
+      const fileResults = [];
+
+      fs.createReadStream(filePath)
+        .pipe(csv())
+        .on('data', (row) => {
+          if (row['Name'] && searchTerms.includes(row['Name'].toLowerCase())) {
+            fileResults.push({ ...row, filename });
+          }
+        })
+        .on('end', () => resolve(fileResults))
+        .on('error', (error) => reject(error));
+    });
+  };
+
+  const sortResultsByPrice = (results) => {
+    return results.sort((a, b) => {
+      const priceA = parseFloat(a['Purchase price']) || 0;
+      const priceB = parseFloat(b['Purchase price']) || 0;
+      return priceB - priceA;
+    });
+  };
+
+  if (filename) {
+    const filePath = path.join(textFilesDirectory, `${filename}.csv`);
+    searchFileExact(filePath, filename)
+      .then(fileResults => res.json(sortResultsByPrice(fileResults)))
+      .catch(error => res.status(500).json({ message: `Error in multisearch on file ${filename}: ${error.message}` }));
+  } else {
+    fs.readdir(textFilesDirectory, (err, files) => {
+      if (err) return res.status(500).json({ message: 'Unable to scan directory' });
+
+      Promise.all(files.map((file) => {
+        const filePath = path.join(textFilesDirectory, file);
+        return searchFileExact(filePath, file.replace('.csv', ''));
+      }))
+      .then(results => res.json(sortResultsByPrice(results.flat())))
+      .catch(error => res.status(500).json({ message: `Error in multisearch across files: ${error.message}` }));
+    });
+  }
+});
+
 // Endpoint to search within a specific file or all files
 app.post('/search', (req, res) => {
   const { query, filename } = req.body;
