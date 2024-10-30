@@ -72,7 +72,9 @@ const updateCSVWithScryfallPrices = async (csvFilePath) => {
         if (scryfallCard) {
           const isFoil = row['Foil'] && row['Foil'].toLowerCase() === 'foil';
           const price = isFoil ? scryfallCard.prices.eur_foil : scryfallCard.prices.eur;
-          if (price) row['Purchase price'] = price;
+          row['Purchase price'] = price ? price : 'N/A'; // Set to price or "N/A" if price is not available
+        } else {
+          row['Purchase price'] = 'N/A'; // Set to "N/A" if no matching Scryfall card is found
         }
         updatedRows.push(row);
       })
