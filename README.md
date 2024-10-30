@@ -11,6 +11,7 @@ The application is developed to work primarily with the files exported by https:
 - Upload Collections: Players can upload their card collection in CSV format, making it easy to manage and trade cards.
 - Search Functionality: Search for cards by name, the results shows set, foil status, rarity, price, and language within uploaded collections. Searching by set or other feature can easily be implemented.
 - Collection Management: Filter collections by collection name to view the contents of each player’s collection.
+- Multisearch, users are able to post a decklist from Moxfield, MTGA or MTGO and get all matches for those cards in either one or more collections.
 - Card Link Integration: Each card name is clickable and links to its Scryfall page for detailed information.
 - Password-Protected Actions: Secure uploads and deletions of collections with a common password.
 - Delete Collections: Players can delete uploaded collections with proper authentication.
@@ -73,3 +74,10 @@ License
 This project is licensed under the MIT License.
 
 Enjoy trading with your friends in your own private MTG trading pod!
+
+### Changes
+2024-10-30
+- Move search logic to backend for experience to be better
+- Loading page now shows 10 most expensive cards in each collection
+- Multisearch added, you can now paste a decklist and get all exact matches from either one or all collections
+- Known issue: Initially loaded list of cards is sorted by owner and not value
