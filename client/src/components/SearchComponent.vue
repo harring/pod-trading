@@ -7,9 +7,9 @@
 
     <div style="display: flex; align-items: center;">
       <input v-model="searchQuery" placeholder="Search for a name..." @keyup.enter="searchItems" />
-      <select v-model="selectedFilename">
+      <select v-model="selectedFilename" @change="loadResults">
         <option value="">All Collections</option>
-        <option v-for="file in uniqueFilenames" :key="file" :value="file">{{ file }}</option>
+        <option v-for="file in collections" :key="file" :value="file">{{ file }}</option>
       </select>
       <button @click="showMultiSearchModal = true" class="multisearch-button">Multisearch</button>
       <button @click="showModal = true" class="upload-button">Upload Collection</button>
@@ -17,12 +17,20 @@
         Selected</button>
     </div>
 
+    <p v-if="notice" role="status">{{ notice }}</p>
+    <p v-if="collectionsError" role="alert">{{ collectionsError }}
+      <button @click="refreshCollections">Retry</button>
+    </p>
+    <p v-if="resultsError" role="alert">{{ resultsError }}
+      <button @click="loadResults">Retry</button>
+    </p>
+
     <!-- Loading Indicator -->
     <div v-if="loading" class="loading-indicator">
       <p>Loading, please wait...</p>
     </div>
 
-    <table v-else>
+    <table v-else-if="!resultsError">
       <thead>
         <tr>
           <th>Name</th>
@@ -30,17 +38,18 @@
           <th>Rarity</th>
           <th>Language</th>
           <th>Collection</th>
-          <th>CM 7 day avg</th>
+          <th>Market price (EUR)</th>
         </tr>
       </thead>
       <tbody>
+        <tr v-if="!names.length"><td colspan="6">No cards found.</td></tr>
         <tr v-for="(row, index) in names" :key="`${row.filename}-${index}`">
           <td><a :href="`https://scryfall.com/cards/${row['Scryfall ID']}`" target="_blank">{{ row['Name'] }}</a></td>
           <td>{{ row['Set name'] }}</td>
           <td>{{ row['Rarity'] }}{{ row['Foil'] === 'foil' ? ' foil' : '' }}</td>
           <td>{{ row['Language'] }}</td>
           <td>{{ row.filename.replace('.csv', '') }}</td>
-          <td>{{ row['Purchase price'] ? row['Purchase price'] + ' €' : 'N/A' }}</td>
+          <td>{{ row['Market price EUR'] && row['Market price EUR'] !== 'N/A' ? row['Market price EUR'] + ' €' : 'N/A' }}</td>
         </tr>
       </tbody>
     </table>
@@ -56,13 +65,14 @@
           <br /><br />
 
           <label for="filename">Choose Collection:</label>
-          <select v-model="selectedFilename">
+          <select v-model="selectedFilename" @change="loadResults">
             <option value="">All Collections</option>
-            <option v-for="file in uniqueFilenames" :key="file" :value="file">{{ file }}</option>
+            <option v-for="file in collections" :key="file" :value="file">{{ file }}</option>
           </select>
           <br /><br />
 
-          <button type="submit">Search</button>
+          <p v-if="resultsError" role="alert">{{ resultsError }}</p>
+          <button type="submit" :disabled="loading">Search</button>
           <button type="button" @click="showMultiSearchModal = false">Cancel</button>
         </form>
       </div>
@@ -74,7 +84,8 @@
         <h3>Upload a CSV File</h3>
         <form @submit.prevent="uploadFile">
           <label for="username">Enter your name:</label>
-          <input type="text" v-model="username" required />
+          <input type="text" v-model="username" maxlength="80" required />
+          <p>Use letters, numbers, spaces, underscores or hyphens. CSV limit: 10 MiB.</p>
           <br /><br />
 
           <label for="file">Choose CSV file:</label>
@@ -85,8 +96,9 @@
           <input type="password" v-model="password" required />
           <br /><br />
 
-          <button type="submit">Upload</button>
-          <button type="button" @click="showModal = false">Cancel</button>
+          <p v-if="uploadError" role="alert">{{ uploadError }}</p>
+          <button type="submit" :disabled="uploading">{{ uploading ? 'Uploading…' : 'Upload' }}</button>
+          <button type="button" :disabled="uploading" @click="showModal = false">Cancel</button>
         </form>
       </div>
     </div>
@@ -102,8 +114,9 @@
           <input type="password" v-model="password" required />
           <br /><br />
 
-          <button type="submit">Delete</button>
-          <button type="button" @click="showDeleteModal = false">Cancel</button>
+          <p v-if="deleteError" role="alert">{{ deleteError }}</p>
+          <button type="submit" :disabled="deleting">{{ deleting ? 'Deleting…' : 'Delete' }}</button>
+          <button type="button" :disabled="deleting" @click="showDeleteModal = false">Cancel</button>
         </form>
       </div>
     </div>
@@ -116,6 +129,9 @@
       return {
         searchQuery: '',
         names: [],
+        collections: [],
+        activeSearch: null,
+        resultsRequest: 0,
         file: null,
         username: '',
         password: '',
@@ -123,142 +139,158 @@
         showDeleteModal: false,
         selectedFilename: '',
         loading: false,
+        uploading: false,
+        deleting: false,
+        resultsError: '',
+        collectionsError: '',
+        uploadError: '',
+        deleteError: '',
+        notice: '',
         multiSearchTerms: '',
         showMultiSearchModal: false,
       };
     },
-    computed: {
-      uniqueFilenames() {
-        const filenames = this.names.map(row => row.filename.replace('.csv', ''));
-        return [...new Set(filenames)];
-      }
-    },
     methods: {
-      fetchNames() {
-        fetch('/files')
-          .then(response => response.json())
-          .then(data => this.names = data)
-          .catch(error => console.error('Error fetching data:', error));
+      async requestJSON(url, options) {
+        let response;
+        try {
+          response = await fetch(url, options);
+        } catch {
+          throw new Error('Unable to reach the server. Check your connection and try again.');
+        }
+        let data;
+        try {
+          data = await response.json();
+        } catch {
+          throw new Error(response.ok ? 'The server returned an invalid response. Please try again.' :
+            `Request failed (HTTP ${response.status}). Please try again.`);
+        }
+        if (!response.ok) throw new Error(typeof data?.message === 'string' ? data.message :
+          `Request failed (HTTP ${response.status}). Please try again.`);
+        return data;
+      },
+      async refreshCollections() {
+        this.collectionsError = '';
+        try {
+          const collections = await this.requestJSON('/collections');
+          if (!Array.isArray(collections) || !collections.every(name => typeof name === 'string')) {
+            throw new Error('The server returned an invalid collection list.');
+          }
+          this.collections = collections;
+          if (this.selectedFilename && !this.collections.includes(this.selectedFilename)) {
+            this.selectedFilename = '';
+          }
+          await this.loadResults();
+        } catch (error) {
+          this.collectionsError = `Unable to load collections: ${error.message}`;
+        }
+      },
+      async loadResults() {
+        const request = ++this.resultsRequest;
+        this.loading = true;
+        this.resultsError = '';
+        this.names = [];
+        try {
+          const search = this.activeSearch;
+          const data = search
+            ? await this.requestJSON(search.terms ? '/multisearch' : '/search', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ ...search, filename: this.selectedFilename }),
+            })
+            : await this.requestJSON(`/files${this.selectedFilename ? `?filename=${encodeURIComponent(this.selectedFilename)}` : ''}`);
+          if (!Array.isArray(data) || !data.every(row => row && typeof row.filename === 'string')) {
+            throw new Error('The server returned invalid card results.');
+          }
+          // A slow response from an earlier selection must not replace the current view.
+          if (request !== this.resultsRequest) return false;
+          this.names = data;
+          return true;
+        } catch (error) {
+          if (request === this.resultsRequest) this.resultsError = `Unable to load cards: ${error.message}`;
+          return false;
+        } finally {
+          if (request === this.resultsRequest) this.loading = false;
+        }
       },
       searchItems() {
-        if (!this.searchQuery) {
-          this.fetchNames();
-          return;
-        }
-
-        this.loading = true;
-        fetch('/search', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: this.searchQuery, filename: this.selectedFilename }),
-        })
-          .then(response => response.json())
-          .then(data => {
-            this.names = data;
-          })
-          .catch(error => {
-            console.error('Error searching:', error);
-            alert(`Search failed: ${error.message}`);
-          })
-          .finally(() => {
-            this.loading = false;
-          });
+        const query = this.searchQuery.trim();
+        this.activeSearch = query ? { query } : null;
+        return this.loadResults();
       },
-      performMultiSearch() {
-        // Split by line and extract only the card names using regex
-        const terms = this.multiSearchTerms
-          .split('\n')
-          .map(line => {
-            // Remove unnecessary escape for '(' to satisfy ESLint
-            const match = line.match(/^[\d]*\s*([^(]+)/);
-            return match ? match[1].trim() : '';
-          })
-          .filter(Boolean); // Remove empty entries
-
+      async performMultiSearch() {
+        const terms = this.multiSearchTerms.split('\n').map(line => {
+          const match = line.match(/^[\d]*\s*([^(]+)/);
+          return match ? match[1].trim() : '';
+        }).filter(Boolean);
         if (!terms.length) {
-          alert('Please enter valid card names.');
+          this.resultsError = 'Please enter valid card names.';
           return;
         }
-
-        this.loading = true;
-        fetch('/multisearch', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ terms, filename: this.selectedFilename }),
-        })
-          .then(response => response.json())
-          .then(data => {
-            this.names = data;
-            this.showMultiSearchModal = false;
-          })
-          .catch(error => {
-            console.error('Error in multisearch:', error);
-            alert(`Multisearch failed: ${error.message}`);
-          })
-          .finally(() => {
-            this.loading = false;
-          });
+        this.activeSearch = { terms };
+        if (await this.loadResults()) this.showMultiSearchModal = false;
       },
       onFileChange(event) {
         this.file = event.target.files[0];
       },
-      uploadFile() {
+      async uploadFile() {
+        if (this.uploading) return;
+        this.uploadError = '';
+        this.notice = '';
         if (!this.file || !this.username || !this.password) {
-          alert('Please fill in all fields.');
+          this.uploadError = 'Please fill in all fields.';
           return;
         }
-
-        this.loading = true;
-        const formData = new FormData();
-        formData.append('username', this.username);
-        formData.append('password', this.password);
-        formData.append('file', this.file);
-
-        fetch('/upload', {
-          method: 'POST',
-          body: formData,
-        })
-          .then(response => response.json())
-          .then(data => {
-            alert(data.message);
-            this.fetchNames();
-            this.showModal = false;
-          })
-          .catch(error => {
-            console.error('Error uploading file:', error);
-            alert(`File upload failed: ${error.message}`);
-          })
-          .finally(() => {
-            this.loading = false;
+        this.uploading = true;
+        try {
+          const formData = new FormData();
+          formData.append('username', this.username);
+          formData.append('file', this.file);
+          await this.requestJSON('/upload', {
+            method: 'POST', headers: { password: this.password }, body: formData,
           });
+          this.notice = 'Collection uploaded successfully.';
+          this.showModal = false;
+          await this.refreshCollections();
+        } catch (error) {
+          this.uploadError = `Upload failed: ${error.message}`;
+        } finally {
+          this.uploading = false;
+        }
       },
-      deleteCSV() {
-        if (!this.password) {
-          alert('Please enter the password.');
+      async deleteCSV() {
+        if (this.deleting) return;
+        this.deleteError = '';
+        this.notice = '';
+        if (!this.password || !this.selectedFilename) {
+          this.deleteError = 'Select a collection and enter the password.';
           return;
         }
-
-        const filename = `${this.selectedFilename}.csv`;
-        fetch(`/delete/${filename}`, {
-          method: 'DELETE',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ password: this.password }),
-        })
-          .then(response => response.json())
-          .then(data => {
-            alert(data.message);
-            this.fetchNames();
-            this.selectedFilename = '';
-            this.showDeleteModal = false;
-          })
-          .catch(error => {
-            console.error('Error deleting file:', error);
-            alert('File deletion failed.');
+        this.deleting = true;
+        const name = this.selectedFilename;
+        try {
+          await this.requestJSON(`/delete/${encodeURIComponent(`${name}.csv`)}`, {
+            method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password: this.password }),
           });
+          this.notice = 'Collection deleted successfully.';
+          this.showDeleteModal = false;
+          this.collections = this.collections.filter(collection => collection !== name);
+          if (this.selectedFilename === name) this.selectedFilename = '';
+          // Invalidate outstanding searches so deleted cards cannot reappear.
+          ++this.resultsRequest;
+          this.names = [];
+          this.loading = false;
+          await this.refreshCollections();
+        } catch (error) {
+          this.deleteError = `Deletion failed: ${error.message}`;
+        } finally {
+          this.deleting = false;
+        }
       }
     },
     mounted() {
-      this.fetchNames();
+      this.refreshCollections();
     }
   };
 </script>
