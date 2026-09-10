@@ -87,6 +87,7 @@ Enjoy trading with your friends in your own private MTG trading pod!
 - Validate collection names, search inputs and CSV contents; limit uploads to 10 MiB and block path traversal and symlink access.
 - Support Scryfall compressed JSONL bulk downloads as well as legacy JSON downloads.
 - Cache Scryfall prices by card ID, validate downloads before replacing cached data, and atomically replace collection CSVs. Serialize collection changes to prevent conflicting writes.
+- Recognize surge-foil CSV finish variants for foil pricing and display a distinct surge foil label.
 - Preserve `Purchase price` and store current foil/non-foil prices separately in `Market price EUR`.
 - Keep all collection options available after searches, refresh results when selections change, and browse every card in a selected collection.
 - Show actionable request errors, retain failed forms for retry, prevent duplicate submissions, and distinguish successful actions from failed refreshes.
@@ -102,7 +103,7 @@ Enjoy trading with your friends in your own private MTG trading pod!
 
 Scryfall prices are indexed once on startup and refreshed daily at 10:00 UTC. Downloads are staged and validated before replacing the cached dataset; failed refreshes keep the last valid prices available. If the startup cache is missing or invalid, the server attempts a download. Uploads wait for an available price snapshot.
 
-Collections store current prices in `Market price EUR`, using `eur_foil` for foil cards and `eur` otherwise. Missing prices display as `N/A`. Search results and top cards sort by market price. The original `Purchase price` column is preserved. Existing collections gain the market-price column on their next successful scheduled update or re-upload; prices previously overwritten by older versions can only be restored from the original export.
+Collections store current prices in `Market price EUR`, using `eur_foil` for foil and surge-foil cards and `eur` otherwise. Surge-foil finishes accept `surgefoil`, `surge foil`, `surge-foil` and `surge_foil`, ignoring case and surrounding whitespace. The CSV must provide the Scryfall ID of the correct printing; the app does not infer a surge-foil printing from its name. Missing prices display as `N/A`. Search results and top cards sort by market price. The original `Purchase price` column is preserved. Existing collections gain the market-price column on their next successful scheduled update or re-upload; prices previously overwritten by older versions can only be restored from the original export.
 
 CSV replacements use temporary files on the same filesystem and atomic renames. Within one server process, uploads, deletions and price updates are serialized per collection. Run one server instance per shared data directory.
 

@@ -119,4 +119,11 @@ function createCollectionLock() {
   };
 }
 
-module.exports = { atomicWrite, createPriceStore, createCollectionLock };
+function marketPrice(row, prices) {
+  const finish = String(row.Foil || '').toLowerCase().replace(/[\s_-]+/g, '');
+  const card = prices.get(row['Scryfall ID']);
+  const isFoil = finish === 'foil' || finish === 'surgefoil';
+  return (isFoil ? card?.eur_foil : card?.eur) || 'N/A';
+}
+
+module.exports = { atomicWrite, createPriceStore, createCollectionLock, marketPrice };

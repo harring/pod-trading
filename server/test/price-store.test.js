@@ -105,3 +105,19 @@ test('compressed JSONL downloads retain prices and reject damaged gzip without r
   await assert.rejects(store.refresh());
   assert.equal(await fs.readFile(filename, 'utf8'), good);
 });
+
+test('surge foil aliases use the exact printing foil price without a non-foil fallback', () => {
+  const { marketPrice } = require('../price-store');
+  const prices = new Map([
+    ['regular', { eur: '1.00', eur_foil: '2.00' }],
+    ['surge', { eur: '3.00', eur_foil: '12.00' }],
+    ['unpriced', { eur: '4.00', eur_foil: null }],
+  ]);
+  for (const Foil of ['surgefoil', 'surge foil', 'SURGE-FOIL', ' surge_foil ', 'Surge Foil']) {
+    assert.equal(marketPrice({ Foil, 'Scryfall ID': 'surge' }, prices), '12.00');
+    assert.equal(marketPrice({ Foil, 'Scryfall ID': 'unpriced' }, prices), 'N/A');
+    assert.equal(marketPrice({ Foil, 'Scryfall ID': 'missing' }, prices), 'N/A');
+  }
+  assert.equal(marketPrice({ Foil: ' FOIL ', 'Scryfall ID': 'regular' }, prices), '2.00');
+  assert.equal(marketPrice({ Foil: 'non-foil', 'Scryfall ID': 'regular' }, prices), '1.00');
+});

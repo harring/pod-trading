@@ -191,3 +191,13 @@ test('invalid collection metadata preserves existing options', async () => {
   assert.equal(app.selectedFilename, 'alice');
   assert.match(app.collectionsError, /invalid collection list/);
 });
+
+test('surge foil aliases display a distinct finish label', () => {
+  const app = component(async () => ok([]));
+  for (const finish of ['surgefoil', 'surge foil', 'SURGE-FOIL', ' surge_foil ']) {
+    assert.equal(app.finishLabel(finish), ' surge foil');
+  }
+  assert.equal(app.finishLabel(' FOIL '), ' foil');
+  assert.equal(app.finishLabel('non-foil'), '');
+  assert.equal(app.finishLabel(undefined), '');
+});

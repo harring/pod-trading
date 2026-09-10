@@ -200,3 +200,18 @@ test('collection metadata includes empty collections and browsing filters indepe
   assert.deepEqual(await empty.json(), []);
   assert.deepEqual(await (await get('/collections')).json(), ['alice', 'bob']);
 });
+
+test('surge foil imports use foil prices and preserve the original finish and purchase price', { timeout: 15000 }, async t => {
+  const { port } = await startServer(t, 'test-secret');
+  const form = new FormData();
+  form.append('username', 'Surge collection');
+  form.append('file', new Blob(['Name,Scryfall ID,Foil,Purchase price\nSurge card,original-id,Surge Foil,9.00\n']), 'cards.csv');
+  const response = await fetch(`http://127.0.0.1:${port}/upload`, {
+    method: 'POST', headers: { password: 'test-secret' }, body: form,
+  });
+  assert.equal(response.status, 200, await response.text());
+  const rows = await fetch(`http://127.0.0.1:${port}/files`).then(r => r.json());
+  assert.equal(rows[0]['Market price EUR'], '5.00');
+  assert.equal(rows[0]['Purchase price'], '9.00');
+  assert.equal(rows[0].Foil, 'Surge Foil');
+});

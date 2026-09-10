@@ -5,7 +5,7 @@ const multer = require('multer');
 const dotenv = require('dotenv');
 const csv = require('csv-parser');
 const { parse } = require('json2csv');
-const { atomicWrite, createPriceStore, createCollectionLock } = require('./price-store');
+const { atomicWrite, createPriceStore, createCollectionLock, marketPrice } = require('./price-store');
 const cron = require('node-cron');
 const { Readable } = require('stream');
 const { pipeline } = require('stream/promises');
@@ -115,9 +115,7 @@ const updateCSVWithScryfallPrices = async (csvFilePath) => {
 
   const rows = await readRows(fs.createReadStream(csvFilePath));
   for (const row of rows) {
-    const card = prices.get(row['Scryfall ID']);
-    const price = row.Foil?.toLowerCase() === 'foil' ? card?.eur_foil : card?.eur;
-    row['Market price EUR'] = price || 'N/A';
+    row['Market price EUR'] = marketPrice(row, prices);
     updatedRows.push(row);
   }
   updatedRows.sort(byPrice);
@@ -167,8 +165,7 @@ app.post('/upload', verifyPassword, upload.single('file'), route(async (req, res
   await withCollection(req.body.username, async () => {
     const prices = await priceStore.snapshot();
     for (const row of rows) {
-      const card = prices.get(row['Scryfall ID']);
-      row['Market price EUR'] = (row.Foil?.toLowerCase() === 'foil' ? card?.eur_foil : card?.eur) || 'N/A';
+      row['Market price EUR'] = marketPrice(row, prices);
     }
     await atomicWrite(collectionPath(req.body.username), parse(rows.sort(byPrice)));
   });

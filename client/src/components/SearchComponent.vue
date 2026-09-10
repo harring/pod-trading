@@ -46,7 +46,7 @@
         <tr v-for="(row, index) in names" :key="`${row.filename}-${index}`">
           <td><a :href="`https://scryfall.com/cards/${row['Scryfall ID']}`" target="_blank">{{ row['Name'] }}</a></td>
           <td>{{ row['Set name'] }}</td>
-          <td>{{ row['Rarity'] }}{{ row['Foil'] === 'foil' ? ' foil' : '' }}</td>
+          <td>{{ row['Rarity'] }}{{ finishLabel(row['Foil']) }}</td>
           <td>{{ row['Language'] }}</td>
           <td>{{ row.filename.replace('.csv', '') }}</td>
           <td>{{ row['Market price EUR'] && row['Market price EUR'] !== 'N/A' ? row['Market price EUR'] + ' €' : 'N/A' }}</td>
@@ -151,6 +151,11 @@
       };
     },
     methods: {
+      finishLabel(value) {
+        const finish = String(value || '').toLowerCase().replace(/[\s_-]+/g, '');
+        if (finish === 'surgefoil') return ' surge foil';
+        return finish === 'foil' ? ' foil' : '';
+      },
       async requestJSON(url, options) {
         let response;
         try {
