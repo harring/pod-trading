@@ -90,3 +90,18 @@ test('collection mutations run in order, including after a failed mutation', asy
   await Promise.all([upload, deletion]);
   assert.deepEqual(events, ['update', 'other collection', 'upload', 'delete']);
 });
+
+test('compressed JSONL downloads retain prices and reject damaged gzip without replacing the cache', async t => {
+  const { gzipSync } = require('node:zlib');
+  const { filename } = await fixture(t);
+  let payload = gzipSync(JSON.stringify({ id: 'card', name: 'Åsa', prices: { eur: '4.00', eur_foil: null } }) + '\n');
+  const store = createPriceStore(filename, async url => url.endsWith('/bulk-data')
+    ? { data: { data: [{ type: 'default_cards', jsonl_download_uri: 'fixture.jsonl.gz' }] } }
+    : { data: Readable.from([payload.subarray(0, 10), payload.subarray(10)]) });
+  await store.refresh();
+  assert.equal((await store.snapshot()).get('card').eur, '4.00');
+  const good = await fs.readFile(filename, 'utf8');
+  payload = payload.subarray(0, payload.length - 8);
+  await assert.rejects(store.refresh());
+  assert.equal(await fs.readFile(filename, 'utf8'), good);
+});

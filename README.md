@@ -85,6 +85,7 @@ Enjoy trading with your friends in your own private MTG trading pod!
 
 - Authenticate uploads before processing files and require an explicitly configured `SECRET`; upload clients now send passwords in a request header.
 - Validate collection names, search inputs and CSV contents; limit uploads to 10 MiB and block path traversal and symlink access.
+- Support Scryfall compressed JSONL bulk downloads as well as legacy JSON downloads.
 - Cache Scryfall prices by card ID, validate downloads before replacing cached data, and atomically replace collection CSVs. Serialize collection changes to prevent conflicting writes.
 - Preserve `Purchase price` and store current foil/non-foil prices separately in `Market price EUR`.
 - Keep all collection options available after searches, refresh results when selections change, and browse every card in a selected collection.

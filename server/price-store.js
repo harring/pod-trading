@@ -2,6 +2,33 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { pipeline } = require('node:stream/promises');
 const axios = require('axios');
+const { createGunzip } = require('node:zlib');
+const { StringDecoder } = require('node:string_decoder');
+
+async function* jsonlPrices(source) {
+  const decoder = new StringDecoder('utf8');
+  let pending = '';
+  let separator = '';
+  const encode = line => {
+    const card = JSON.parse(line);
+    const result = separator + JSON.stringify({ id: card.id, prices: card.prices });
+    separator = ',';
+    return result;
+  };
+  yield '[';
+  for await (const chunk of source) {
+    pending += decoder.write(chunk);
+    let newline;
+    while ((newline = pending.indexOf('\n')) !== -1) {
+      const line = pending.slice(0, newline).trim();
+      pending = pending.slice(newline + 1);
+      if (line) yield encode(line);
+    }
+  }
+  pending += decoder.end();
+  if (pending.trim()) yield encode(pending);
+  yield ']';
+}
 
 // Staging beside the destination also works when data directories are mounted volumes.
 async function atomicWrite(filename, contents) {
@@ -41,12 +68,17 @@ function createPriceStore(filename, get = (...args) => axios.get(...args)) {
       if (loading) await loading.catch(() => {});
       const response = await get('https://api.scryfall.com/bulk-data', { timeout: 30000 });
       const dataset = response.data?.data?.find(item => item.type === 'default_cards');
-      if (!dataset?.download_uri) throw new Error('Scryfall default_cards download is unavailable.');
+      const downloadUri = dataset?.jsonl_download_uri || dataset?.download_uri;
+      if (!downloadUri) throw new Error('Scryfall default_cards download is unavailable.');
       const directory = await fs.promises.mkdtemp(path.join(path.dirname(filename), '.download-'));
       try {
         const staged = path.join(directory, 'scryfall.json');
-        const download = await get(dataset.download_uri, { responseType: 'stream', timeout: 120000 });
-        await pipeline(download.data, fs.createWriteStream(staged));
+        const download = await get(downloadUri, { responseType: 'stream', timeout: 120000, decompress: !dataset.jsonl_download_uri });
+        if (dataset.jsonl_download_uri) {
+          await pipeline(download.data, createGunzip(), jsonlPrices, fs.createWriteStream(staged));
+        } else {
+          await pipeline(download.data, fs.createWriteStream(staged));
+        }
         const nextIndex = await readIndex(staged);
         await fs.promises.rename(staged, filename);
         index = nextIndex;
